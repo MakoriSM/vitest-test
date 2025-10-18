@@ -11,7 +11,7 @@ Minimum reproducible example demonstrating Vitest workspace projects with Testco
 
 ### Purpose of this repo
 This MRE highlights issues when using the VS Code Vitest extension with workspace projects and Testcontainers:
-- Extension runs can behave differently vs CLI, producing intermittent errors.
+- Extension runs can behave differently vs CLI, producing issues.
 - Testcontainers often do not teardown correctly when launched via the extension, leaving containers running.
 - Goal: gather confirmations, bug reports, and feedback to help fix extension behavior and validate this setup.
 
@@ -123,13 +123,11 @@ This MRE highlights issues when using the VS Code Vitest extension with workspac
    ```
 
 ### Environment variables
-Most env is auto-provisioned by global setup. Optional overrides can be placed in a repo-root `.int.env` which is loaded for integration suites:
+Most env is supposed to be auto-provisioned by global setup:
 - DATABASE_URL, SHADOW_DATABASE_URL (auto from Testcontainers)
 - R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET (auto for LocalStack)
 - FIREBASE_PROJECT_ID, FIREBASE_AUTH_EMULATOR (auto for auth suite)
 - PUBLIC_BASE_URL (defaults to http://localhost:3000)
-
-Note: `.int.env` is optional and cleaned up after tests. Do not commit secrets.
 
 ### Prisma
 - Schema lives in `prisma/schema.prisma`.
@@ -142,9 +140,10 @@ Note: `.int.env` is optional and cleaned up after tests. Do not commit secrets.
 
 ### Running via VS Code Vitest extension
 This repo uses a Vitest workspace (`vitest.workspace.ts`) with three projects: `unit`, `int`, `int-auth`.
-- The extension can run either an individual test file OR a whole folder, but currently not both modes reliably for this MRE.
-- Known issue: When using the extension, Testcontainers frequently fail to teardown, leaving containers running. Prefer CLI for reliable repro and teardown.
-- If extension behavior seems inconsistent, run the CLI instead: `npx vitest run` or the project scripts above.
+- Currently globalSetup config uses vitest.global.ts file for global setup. The globalSetup file is what it runs.
+- The setupFiles config uses the workerDb service, which creates a unique database for each file to separate db operations for each. This could be removed if it makes testing easier.
+- Known issue: When using the extension, Testcontainers frequently fail to teardown, leaving containers running. Prefer CLI for reliable test and teardown.
+- Previously attempted to use just globalSetup without an onTestsRerun hook but this would only run first time the repo loads and never again so this was changed.
 
 ### How to help (feedback/bug reports wanted)
 If you can reproduce extension issues, please share:
