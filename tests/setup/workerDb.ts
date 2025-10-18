@@ -1,14 +1,15 @@
-import { execSync } from 'node:child_process';
+import { beforeAll, expect, inject } from 'vitest';
+import { createHash } from 'node:crypto';
+import { relative } from 'node:path';
+import { adminUrlFromTemplate, createDbFromTemplate } from './dbAdmin';
+import { getEnv } from './getEnv';
 
-type WorkerGlobals = {
-  WORKER_DB_READY?: boolean;
-  WORKER_SCHEMA?: string;
-};
-
-const WORKER_GLOBALS = globalThis as unknown as WorkerGlobals;
+type WorkerGlobals = Record<string, never>;
+const WORKER_GLOBALS = globalThis as unknown as WorkerGlobals; // kept for compatibility; unused
 
 function isIntegrationSuite(): boolean {
   const suite = process.env.TEST_SUITE;
+  console.log('workerDb.ts: isIntegrationSuite', suite);
   return suite?.startsWith('int') === true || suite === 'all';
 }
 
@@ -18,67 +19,39 @@ function toUrlWithDb(baseUrl: string, dbName: string): string {
   return u.toString();
 }
 
-function registerDatabaseTeardown(workerDb: string, adminUrl: string): void {
-  const drop = () => {
-    try {
-      // Terminate connections to the worker DB to allow drop
-      execSync(
-        `psql "${adminUrl}" -v ON_ERROR_STOP=1 -c 'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${workerDb}' AND pid <> pg_backend_pid()'`,
-        { stdio: 'ignore' },
-      );
-      execSync(`psql "${adminUrl}" -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS "${workerDb}"'`, {
-        stdio: 'ignore',
-      });
-    } catch {
-      // Best effort; ignore teardown errors
-    }
-  };
-
-  const once = () => {
-    process.once('exit', () => {
-      drop();
-    });
-    process.once('SIGINT', () => {
-      drop();
-      process.exit(130);
-    });
-    process.once('SIGTERM', () => {
-      drop();
-      process.exit(143);
-    });
-  };
-
-  once();
-}
+// No teardown; rerun cleanup handled via plugin
 
 (() => {
-  // Only run in integration suites and when a database is provisioned by global setup
-  if (!isIntegrationSuite()) return;
-  if (WORKER_GLOBALS.WORKER_DB_READY) return;
+  process.env.DATABASE_URL = getEnv('DATABASE_URL');
+  process.env.SHADOW_DATABASE_URL = getEnv('SHADOW_DATABASE_URL');
+  process.env.DB_PROVIDER = getEnv('DB_PROVIDER');
+  process.env.AUTH_PROVIDER = getEnv('AUTH_PROVIDER');
+  process.env.FIREBASE_AUTH_EMULATOR = getEnv('FIREBASE_AUTH_EMULATOR');
+  process.env.FIREBASE_PROJECT_ID = getEnv('FIREBASE_PROJECT_ID');
+  process.env.REQUIRE_DB = getEnv('REQUIRE_DB');
+  process.env.REQUIRE_S3 = getEnv('REQUIRE_S3');
+  process.env.PUBLIC_BASE_URL = getEnv('PUBLIC_BASE_URL');
+  process.env.R2_ENDPOINT = getEnv('R2_ENDPOINT');
+  process.env.R2_ACCESS_KEY_ID = getEnv('R2_ACCESS_KEY_ID');
+  process.env.R2_SECRET_ACCESS_KEY = getEnv('R2_SECRET_ACCESS_KEY');
+  process.env.R2_BUCKET = getEnv('R2_BUCKET');
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = getEnv('FIREBASE_AUTH_EMULATOR_HOST');
+  process.env.FIREBASE_PROJECT_ID = getEnv('FIREBASE_PROJECT_ID');
 
-  const templateUrl = process.env.DATABASE_URL;
-  if (!templateUrl) return;
+  beforeAll(() => {
+    const templateUrl = process.env.DATABASE_URL;
+    if (!templateUrl) return;
 
-  const workerDb = `vitest_w${process.pid}`;
-  const adminUrl = toUrlWithDb(templateUrl, 'postgres');
+    const testPath = (expect as any).getState?.().testPath as string | undefined;
+    if (!testPath) return;
 
-  // Create a database cloned from the template prepared by globalSetup (sync)
-  try {
-    execSync(
-      `psql "${adminUrl}" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE "${workerDb}" TEMPLATE vitest_template'`,
-      { stdio: 'ignore' },
-    );
-  } catch {
-    // ignore if exists
-  }
+    const rel = relative(process.cwd(), testPath);
+    const hash = createHash('sha1').update(rel).digest('hex').slice(0, 10);
+    const dbName = `vt_${hash}`;
 
-  // Point worker's DATABASE_URL to its dedicated database
-  const workerUrl = toUrlWithDb(templateUrl, workerDb);
-  process.env.DATABASE_URL = workerUrl;
+    const adminUrl = adminUrlFromTemplate(templateUrl);
+    createDbFromTemplate(adminUrl, dbName);
 
-  WORKER_GLOBALS.WORKER_DB_READY = true;
-  WORKER_GLOBALS.WORKER_SCHEMA = workerDb;
-
-  // Ensure database is dropped when the worker exits
-  registerDatabaseTeardown(workerDb, adminUrl);
+    process.env.DATABASE_URL = toUrlWithDb(templateUrl, dbName);
+  });
 })();

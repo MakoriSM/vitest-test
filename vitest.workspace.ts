@@ -22,8 +22,8 @@ export default defineWorkspace([
         'tests/integration/**/auth.*.int.test.ts',
         'tests/integration/**/auth.*.test.ts',
       ],
-      setupFiles: ['tests/setup/workerDb.ts'],
-      globalSetup: ['tests/setup/vitest.global.int.ts'],
+      setupFiles: [],
+      globalSetup: [],
       testTimeout: 120000,
       hookTimeout: 120000,
       env: {
@@ -39,8 +39,8 @@ export default defineWorkspace([
     test: {
       name: 'int-auth',
       include: ['tests/integration/**/*.auth.int.test.ts', 'tests/integration/auth/**/*.auth.int.test.ts'],
-      setupFiles: ['tests/setup/workerDb.ts'],
-      globalSetup: ['tests/setup/vitest.global.int-auth.ts'],
+      setupFiles: [],
+      globalSetup: [],
       testTimeout: 120000,
       hookTimeout: 120000,
       env: {

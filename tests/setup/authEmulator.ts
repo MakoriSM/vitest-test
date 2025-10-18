@@ -1,20 +1,23 @@
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import net from 'node:net';
+import { setEnv } from './utils';
+import { TestProject } from 'vitest/dist/node.js';
 
 let emulatorContainer: StartedTestContainer | undefined;
 
-export async function startAuthEmulator(): Promise<void> {
-  if (process.env.FIREBASE_AUTH_EMULATOR_HOST) return; // assume already running
+export async function startAuthEmulator(project: TestProject): Promise<void> {
   const image = 'evolutecx/firebase-emulator:latest';
   const port = 9099;
   const container = new GenericContainer(image)
     .withExposedPorts(port)
-    .withEnvironment({ FB_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ?? 'demo-test' });
+    .withEnvironment({ FB_PROJECT_ID: 'demo-test' });
+    
+  setEnv(project, 'FIREBASE_PROJECT_ID', 'demo-test');
 
   emulatorContainer = await container.start();
   const host = emulatorContainer.getHost();
   const mappedPort = emulatorContainer.getMappedPort(port);
-  process.env.FIREBASE_AUTH_EMULATOR_HOST = `${host}:${mappedPort}`;
+  setEnv(project, 'FIREBASE_AUTH_EMULATOR_HOST', `${host}:${mappedPort}`);
 
   // Wait until the emulator port is accepting connections to avoid race conditions
   await new Promise<void>((resolve, reject) => {
@@ -43,7 +46,7 @@ export async function startAuthEmulator(): Promise<void> {
 
   // Additionally wait for the HTTP API to be ready, not just the TCP listener
   // This avoids intermittent "socket closed" errors when issuing the first HTTP requests
-  const projectId = process.env.FIREBASE_PROJECT_ID ?? 'demo-test';
+  const projectId = 'demo-test';
   const baseUrl = `http://${host}:${mappedPort}`;
   const adminHealthUrl = `${baseUrl}/emulator/v1/projects/${encodeURIComponent(projectId)}/config`;
   const httpReadyTimeoutMs = 15000;
@@ -86,6 +89,7 @@ export async function createUserAndGetIdToken(
     body: JSON.stringify({ email, password, returnSecureToken: true }),
   });
   const signupBody = (await signupRes.json()) as { idToken?: string; localId?: string };
+  console.log('createUserAndGetIdToken: signupBody:', signupBody);
   if (!signupRes.ok || !signupBody?.localId) {
     throw new Error('Failed to sign up user in emulator');
   }

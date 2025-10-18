@@ -1,8 +1,9 @@
 import { stopAuthEmulator } from './authEmulator';
 import fs from 'node:fs';
 import path from 'node:path';
-
+ 
 export default async function globalTeardown(): Promise<void> {
+  console.log('globalTeardown: global.__TESTCONTAINERS__:', global.__TESTCONTAINERS__);
   if (global.__TESTCONTAINERS__?.db) {
     await global.__TESTCONTAINERS__.db.stop();
   }

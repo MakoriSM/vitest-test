@@ -1,4 +1,6 @@
 import { defineConfig } from 'vitest/config';
+import CustomReporter from './tests/setup/reporterSetup';
+// rerun cleanup is handled via setup file per-project
 
 export default defineConfig({
   test: {
@@ -8,12 +10,9 @@ export default defineConfig({
     pool: 'forks',
     testTimeout: 60000,
     hookTimeout: 60000,
-    setupFiles: [
-      'tests/setup/vitest.global.ts',
-      'tests/setup/vitest.global.int.ts',
-      'tests/setup/vitest.global.int-auth.ts',
-      'tests/setup/workerDb.ts',
-    ],
+    setupFiles: [],
+    reporters: [],
+    // plugins not used; we use setupFiles instead
     projects: [
       {
         extends: true,
@@ -26,7 +25,7 @@ export default defineConfig({
           testTimeout: 60000,
           hookTimeout: 60000,
           setupFiles: [],
-          globalSetup: ['tests/setup/vitest.global.ts'],
+          globalSetup: [],
           env: {
             TEST_SUITE: 'unit',
           },
@@ -48,12 +47,8 @@ export default defineConfig({
           testTimeout: 120000,
           hookTimeout: 120000,
           setupFiles: ['tests/setup/workerDb.ts'],
-          globalSetup: ['tests/setup/vitest.global.int.ts'],
+          globalSetup: ['tests/setup/vitest.global.ts'],
           env: {
-            TEST_SUITE: 'int',
-            AUTH_PROVIDER: 'none',
-            REQUIRE_DB: 'true',
-            REQUIRE_S3: 'true',
           },
         },
       },
@@ -68,14 +63,8 @@ export default defineConfig({
           testTimeout: 120000,
           hookTimeout: 120000,
           setupFiles: ['tests/setup/workerDb.ts'],
-          globalSetup: ['tests/setup/vitest.global.int-auth.ts'],
+          globalSetup: ['tests/setup/vitest.global.ts'],
           env: {
-            TEST_SUITE: 'int-auth',
-            AUTH_PROVIDER: 'firebase',
-            FIREBASE_AUTH_EMULATOR: 'true',
-            FIREBASE_PROJECT_ID: 'demo-test',
-            REQUIRE_DB: 'true',
-            REQUIRE_S3: 'true',
           },
         },
       },

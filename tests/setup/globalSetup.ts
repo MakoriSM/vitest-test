@@ -4,6 +4,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { startAuthEmulator } from './authEmulator';
 import net from 'node:net';
+import type { TestProject } from 'vitest/node';
+import { setEnv } from './utils';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -57,27 +59,7 @@ function execWithRetry(cmd: string, cwd: string, attempts = 3) {
   }
 }
 
-export default async function globalSetup(): Promise<void> {
-  const testSuite = process.env.TEST_SUITE;
-  const cliArgs = process.argv.slice(2);
-  const cliIsIntegration = cliArgs.some(
-    (a) => a.includes('tests/integration') || a.includes('.int.test'),
-  );
-  const cliNeedsAuth = cliArgs.some((a) => /auth/i.test(a));
-
-  const flagRequireDb = process.env.REQUIRE_DB === 'true';
-  const flagRequireS3 = process.env.REQUIRE_S3 === 'true';
-  const shouldSetupDb =
-    flagRequireDb ||
-    testSuite?.startsWith('int') === true ||
-    testSuite === 'all' ||
-    cliIsIntegration;
-  const shouldSetupAuth =
-    process.env.AUTH_PROVIDER === 'firebase' ||
-    testSuite === 'int-auth' ||
-    testSuite === 'all' ||
-    cliNeedsAuth;
-  const shouldSetupS3 = flagRequireS3 || shouldSetupDb;
+export default async function globalSetup(project: TestProject, shouldSetupDb: boolean, shouldSetupS3: boolean, shouldSetupAuth: boolean): Promise<GlobalContext> {
 
   process.env.NODE_ENV = 'test';
   // Ensure PUBLIC_BASE_URL is set so filePathToPublicUrl can construct URLs during tests
@@ -86,7 +68,14 @@ export default async function globalSetup(): Promise<void> {
   process.env.TESTCONTAINERS_RYUK_DISABLED ||= 'true';
   process.env.TESTCONTAINERS_CHECKS_DISABLE ||= 'true';
 
+  let provideDb: { templateUrl: string; adminUrl: string; templateDb: string } | undefined;
+  let provideS3:
+    | { endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string }
+    | undefined;
+  let provideAuth: { emulatorHost: string; projectId: string } | undefined;
+
   if (shouldSetupDb) {
+    console.log('globalSetup.ts: shouldSetupDb', shouldSetupDb);
     const postgresImage = 'postgres:16-alpine';
     const POSTGRES_USER = 'postgres';
     const POSTGRES_PASSWORD = 'password';
@@ -107,11 +96,12 @@ export default async function globalSetup(): Promise<void> {
     const host = container.getHost();
     const port = container.getMappedPort(5432);
 
-    const databaseUrl = `postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}`;
+    let databaseUrl = `postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${POSTGRES_DB}`;
+    console.log('globalSetup.ts: databaseUrl', databaseUrl);
 
-    process.env.DATABASE_URL = databaseUrl;
-    process.env.SHADOW_DATABASE_URL = `${databaseUrl}_shadow`;
-    process.env.DB_PROVIDER = 'prisma';
+    setEnv(project, 'DATABASE_URL', databaseUrl);
+    setEnv(project, 'SHADOW_DATABASE_URL', `${databaseUrl}_shadow`);
+    setEnv(project, 'DB_PROVIDER', 'prisma');
 
     await waitForPort(host, port);
 
@@ -126,8 +116,9 @@ export default async function globalSetup(): Promise<void> {
     const templateDb = 'vitest_template';
 
     // Build URLs
-    const baseUrl = process.env.DATABASE_URL!; // points to vitest_test
+    const baseUrl = databaseUrl; // points to vitest_test
     const toUrlWithDb = (dbName: string) => {
+      console.log('globalSetup.ts: toUrlWithDb', baseUrl, dbName);
       const u = new URL(baseUrl);
       u.pathname = `/${dbName}`;
       return u.toString();
@@ -164,16 +155,17 @@ export default async function globalSetup(): Promise<void> {
     }
 
     // Push Prisma schema into the template database
-    const prevDbUrl = process.env.DATABASE_URL;
+    const prevDbUrl = databaseUrl;
     try {
-      process.env.DATABASE_URL = templateUrl;
+      databaseUrl = templateUrl;
       execWithRetry('npx prisma db push --skip-generate', repoRoot);
     } finally {
-      process.env.DATABASE_URL = prevDbUrl;
+      databaseUrl = prevDbUrl;
     }
 
     // Point base DATABASE_URL to the template for worker consumption
-    process.env.DATABASE_URL = templateUrl;
+    project.provide('DATABASE_URL', templateUrl);
+    provideDb = { templateUrl, adminUrl, templateDb };
 
     global.__TESTCONTAINERS__ = {
       db: {
@@ -201,11 +193,12 @@ export default async function globalSetup(): Promise<void> {
     const host = localstack.getHost();
     const port = localstack.getMappedPort(4566);
     const endpoint = `http://${host}:${port}`;
+    console.log('globalSetup.ts: endpoint', endpoint);
 
-    process.env.R2_ENDPOINT = endpoint;
-    process.env.R2_ACCESS_KEY_ID ||= 'test';
-    process.env.R2_SECRET_ACCESS_KEY ||= 'test';
-    process.env.R2_BUCKET ||= 'vitest-test';
+    project.provide('R2_ENDPOINT', endpoint);
+    project.provide('R2_ACCESS_KEY_ID', 'test');
+    project.provide('R2_SECRET_ACCESS_KEY', 'test');
+    project.provide('R2_BUCKET', 'vitest-test');
 
     // Create bucket using AWS SDK v3
     const { S3Client, CreateBucketCommand } = await import('@aws-sdk/client-s3');
@@ -224,6 +217,13 @@ export default async function globalSetup(): Promise<void> {
       // Ignore if bucket already exists
     }
 
+    provideS3 = {
+      endpoint,
+      bucket: process.env.R2_BUCKET!,
+      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    };
+
     global.__TESTCONTAINERS__.s3 = {
       stop: async () => {
         await localstack.stop();
@@ -232,11 +232,31 @@ export default async function globalSetup(): Promise<void> {
   }
 
   if (shouldSetupAuth) {
-    process.env.AUTH_PROVIDER = 'firebase';
-    process.env.FIREBASE_AUTH_EMULATOR = 'true';
-    process.env.FIREBASE_PROJECT_ID ||= 'demo-test';
-    await startAuthEmulator();
+    setEnv(project, 'AUTH_PROVIDER', 'firebase');
+    setEnv(project, 'FIREBASE_AUTH_EMULATOR', 'true');
+    setEnv(project, 'FIREBASE_PROJECT_ID', 'demo-test');
+    await startAuthEmulator(project);
+    if (process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+      provideAuth = {
+        emulatorHost: process.env.FIREBASE_AUTH_EMULATOR_HOST,
+        projectId: process.env.FIREBASE_PROJECT_ID!,
+      };
+    }
   } else {
-    process.env.AUTH_PROVIDER = 'none';
+    setEnv(project, 'AUTH_PROVIDER', 'none');
   }
+
+  // Provide dynamic infrastructure details to workers
+  const context = {
+    db: provideDb,
+    s3: provideS3,
+    auth: provideAuth,
+  };
+  return context;
+}
+
+export interface GlobalContext {
+  db?: { templateUrl: string; adminUrl: string; templateDb: string };
+  s3?: { endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string };
+  auth?: { emulatorHost: string; projectId: string };
 }

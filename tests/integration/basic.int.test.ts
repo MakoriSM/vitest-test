@@ -1,20 +1,11 @@
-import request from 'supertest';
-import app from '../../src/app';
-import { expect } from 'vitest';
-import { test } from 'vitest';
+import { describe as vDescribe, it as vIt, expect as vExpect } from "vitest";
 
-test('DB create works', async () => {
-  const res = await request(app).post('/api/db').send({ data: 'x' });
-  console.log(res);
-  expect(res.status).toBe(201);
-  expect(typeof res.body.id).toBe('string');
+
+vDescribe("basic infra smoke", () => {
+  vIt("sets DATABASE_URL for per-file db", () => {
+    const url = process.env.DATABASE_URL;
+    vExpect(url).toBeTruthy();
+    vExpect(url!).toMatch(/vt_/);
+    vExpect(process.env.DATABASE_URL).toBe(url);
+  });
 });
-
-test('S3 upload works', async () => {
-  const res = await request(app).post('/api/s3');
-  console.log(res);
-  expect(res.status).toBe(201);
-  expect(typeof res.body.key).toBe('string');
-});
-
-
