@@ -7,14 +7,6 @@ import net from 'node:net';
 import type { TestProject } from 'vitest/node';
 import { setEnv } from './utils';
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __TESTCONTAINERS__: {
-    db?: { stop: () => Promise<void> };
-    s3?: { stop: () => Promise<void> };
-  };
-}
-
 async function waitForPort(host: string, port: number, timeoutMs = 15000): Promise<void> {
   const start = Date.now();
   const tryOnce = () =>

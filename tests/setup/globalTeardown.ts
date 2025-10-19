@@ -10,6 +10,11 @@ export default async function globalTeardown(): Promise<void> {
   if (global.__TESTCONTAINERS__?.s3) {
     await global.__TESTCONTAINERS__.s3.stop();
   }
+  // @ts-ignore - optional auth stop handle
+  if ((global as any).__TESTCONTAINERS__?.auth) {
+    // @ts-ignore
+    await (global as any).__TESTCONTAINERS__.auth.stop();
+  }
   if (process.env.AUTH_PROVIDER === 'firebase') {
     await stopAuthEmulator();
   }
@@ -31,5 +36,6 @@ declare global {
   var __TESTCONTAINERS__: {
     db?: { stop: () => Promise<void> };
     s3?: { stop: () => Promise<void> };
+    auth?: { stop: () => Promise<void> };
   };
 }

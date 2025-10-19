@@ -11,7 +11,7 @@ export default defineConfig({
     testTimeout: 60000,
     hookTimeout: 60000,
     setupFiles: [],
-    reporters: [],
+    reporters: ['default',new CustomReporter()],
     // plugins not used; we use setupFiles instead
     projects: [
       {
@@ -47,8 +47,10 @@ export default defineConfig({
           testTimeout: 120000,
           hookTimeout: 120000,
           setupFiles: ['tests/setup/workerDb.ts'],
-          globalSetup: ['tests/setup/vitest.global.ts'],
+          globalSetup: [],
           env: {
+            REQUIRE_DB: 'true',
+            REQUIRE_S3: 'true',
           },
         },
       },
@@ -63,8 +65,11 @@ export default defineConfig({
           testTimeout: 120000,
           hookTimeout: 120000,
           setupFiles: ['tests/setup/workerDb.ts'],
-          globalSetup: ['tests/setup/vitest.global.ts'],
+          globalSetup: [],
           env: {
+            REQUIRE_DB: 'true',
+            REQUIRE_S3: 'true',
+            REQUIRE_AUTH: 'true',
           },
         },
       },
